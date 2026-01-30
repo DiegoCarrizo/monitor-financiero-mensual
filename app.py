@@ -1,76 +1,65 @@
 import streamlit as st
 import pandas as pd
+from datetime import datetime
 
-# CONFIGURACIÓN DE PÁGINA
+# CONFIGURACIÓN
 st.set_page_config(page_title="My Wealth Engine", layout="wide")
+st.title("🛡️ Wealth Engine Cloud")
 
-st.title("🛡️ Wealth Engine: Monitor de Capital")
-st.markdown("---")
+# --- CONEXIÓN A GOOGLE SHEETS ---
+# Pega aquí el enlace de tu Google Sheet
+URL_GSHEET = "TU_LINK_DE_GOOGLE_SHEETS_AQUÍ"
 
-# USAMOS SESSION_STATE PARA QUE LOS DATOS NO SE BORREN AL TOCAR BOTONES
-if 'gastos' not in st.session_state:
-    st.session_state.gastos = pd.DataFrame(columns=["Fecha", "Concepto", "Monto", "Prioridad"])
-if 'ingresos' not in st.session_state:
-    st.session_state.ingresos = pd.DataFrame(columns=["Fecha", "Concepto", "Monto"])
+# Función para cargar datos (Simulada para persistencia simple)
+if 'db' not in st.session_state:
+    st.session_state.db = pd.DataFrame(columns=["Tipo", "Concepto", "Monto", "Prioridad"])
 
-# COLUMNAS PARA CARGA DE DATOS
-col_ing, col_gas = st.columns(2)
+# --- CARGA DE DATOS ---
+with st.sidebar:
+    st.header("⚙️ Registro")
+    tipo = st.selectbox("Tipo", ["Ingreso", "Gasto"])
+    concepto = st.text_input("Concepto")
+    monto = st.number_input("Monto ($)", min_value=0.0)
+    
+    prioridad = 0
+    if tipo == "Gasto":
+        prioridad = st.select_slider("Prioridad", options=[1,2,3,4,5], value=3)
+    
+    if st.button("Guardar en Nube"):
+        nuevo = pd.DataFrame([[tipo, concepto, monto, prioridad]], columns=st.session_state.db.columns)
+        st.session_state.db = pd.concat([st.session_state.db, nuevo], ignore_index=True)
+        st.success("Dato guardado!")
 
-with col_ing:
-    with st.expander("💰 Cargar Ingreso", expanded=True):
-        concepto_i = st.text_input("Origen del ingreso", key="ing_con")
-        monto_i = st.number_input("Monto ($)", min_value=0.0, key="ing_mon")
-        if st.button("Registrar Ingreso"):
-            nuevo_i = pd.DataFrame([[pd.Timestamp.now(), concepto_i, monto_i]], 
-                                   columns=st.session_state.ingresos.columns)
-            st.session_state.ingresos = pd.concat([st.session_state.ingresos, nuevo_i], ignore_index=True)
-            st.success("Ingreso registrado")
+# --- VISUALIZACIÓN ---
+col1, col2 = st.columns(2)
 
-with col_gas:
-    with st.expander("📉 Cargar Gasto", expanded=True):
-        concepto_g = st.text_input("¿En qué gastaste?", key="gas_con")
-        monto_g = st.number_input("Monto ($)", min_value=0.0, key="gas_mon")
-        prioridad = st.select_slider("Prioridad (1=Vital | 5=Gasto Hormiga)", options=[1,2,3,4,5], value=3)
-        if st.button("Registrar Gasto"):
-            nuevo_g = pd.DataFrame([[pd.Timestamp.now(), concepto_g, monto_g, prioridad]], 
-                                   columns=st.session_state.gastos.columns)
-            st.session_state.gastos = pd.concat([st.session_state.gastos, nuevo_g], ignore_index=True)
-            st.success("Gasto registrado")
+with col1:
+    st.subheader("📋 Ingresos")
+    df_ing = st.session_state.db[st.session_state.db["Tipo"] == "Ingreso"]
+    st.table(df_ing)
+    st.metric("Total Ingresos", f"$ {df_ing['Monto'].sum():,.2f}")
 
-st.markdown("---")
+with col2:
+    st.subheader("📋 Gastos")
+    df_gas = st.session_state.db[st.session_state.db["Tipo"] == "Gasto"]
+    st.table(df_gas)
+    st.metric("Total Gastos", f"$ {df_gas['Monto'].sum():,.2f}")
 
-# SECCIÓN DE TABLAS Y ANÁLISIS
-c1, c2 = st.columns(2)
-
-with c1:
-    st.subheader("📋 Detalle de Ingresos")
-    st.dataframe(st.session_state.ingresos, use_container_width=True)
-    total_i = st.session_state.ingresos["Monto"].sum()
-    st.metric("Total Ingresos", f"$ {total_i:,.2f}")
-
-with c2:
-    st.subheader("📋 Detalle de Gastos")
-    st.dataframe(st.session_state.gastos, use_container_width=True)
-    total_g = st.session_state.gastos["Monto"].sum()
-    st.metric("Total Gastos", f"$ {total_g:,.2f}", delta=f"-{total_g:,.2f}", delta_color="inverse")
-
-st.markdown("---")
-
-# MOTOR DE DETECCIÓN DE GASTOS HORMIGA
-st.subheader("🔍 Diagnóstico de Salud Financiera")
-
-# Filtramos los gastos con prioridad 4 y 5
-hormigas = st.session_state.gastos[st.session_state.gastos["Prioridad"] >= 4]
-ahorro_potencial = hormigas["Monto"].sum()
-
-if ahorro_potencial > 0:
-    st.error(f"⚠️ Se detectaron **Gastos Hormiga** por un total de: **$ {ahorro_potencial:,.2f}**")
-    st.write("Sugerencia: Estos gastos son prescindibles. Eliminarlos mejoraría tu capacidad de ahorro mensual de inmediato.")
-    st.table(hormigas[["Concepto", "Monto"]])
-else:
-    st.success("✅ No se detectaron gastos innecesarios de alta prioridad. ¡Tus cuentas están optimizadas!")
-
-# SALDO FINAL
-saldo = total_i - total_g
+# --- ELIMINAR REGISTROS ---
 st.divider()
-st.header(f"Saldo Neto Mensual: $ {saldo:,.2f}")
+if not st.session_state.db.empty:
+    eliminar = st.selectbox("Seleccionar para eliminar", st.session_state.db.index, 
+                            format_func=lambda x: f"{st.session_state.db.iloc[x]['Concepto']} (${st.session_state.db.iloc[x]['Monto']})")
+    if st.button("🗑️ Confirmar Eliminación"):
+        st.session_state.db = st.session_state.db.drop(eliminar).reset_index(drop=True)
+        st.rerun()
+
+# --- DIAGNÓSTICO ---
+hormigas = df_gas[df_gas["Prioridad"] >= 4]
+if not hormigas.empty:
+    st.error(f"⚠️ Alerta: Gastos Hormiga detectados (${hormigas['Monto'].sum()})")
+    st.dataframe(hormigas)
+
+# --- BOTÓN DESCARGA ---
+csv = st.session_state.db.to_csv(index=False).encode('utf-8')
+st.download_button("📥 Descargar Reporte Completo", data=csv, file_name="reporte_wealth.csv", mime="text/csv")
